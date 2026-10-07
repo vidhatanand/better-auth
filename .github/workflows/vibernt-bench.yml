@@ -11,6 +11,9 @@
 name: Vibernt bench
 
 on:
+  push:
+    branches: [bench]
+    paths: ['.github/workflows/vibernt-bench.yml']
   workflow_dispatch:
     inputs:
       runner:
@@ -39,6 +42,7 @@ env:
 jobs:
   test:
     name: test (22.x)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
@@ -90,6 +94,7 @@ jobs:
 
   adapter-integration:
     name: ${{ matrix.packages }} Integration Test
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     permissions:

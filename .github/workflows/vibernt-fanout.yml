@@ -1,4 +1,4 @@
-# Vibernt fan-out benchmark. Manual dispatch only (the push trigger only registers the workflow; its jobs are skipped).
+# Vibernt fan-out benchmark. Manual dispatch only.
 #
 # CI `test` (node 22.x, ci.yml) and the E2E adapter integration tests of drizzle-v2-relations and prisma (e2e.yml), with
 # Vibernt CI fan-out instead of one job each:
@@ -13,9 +13,6 @@
 name: Vibernt fan-out
 
 on:
-  push:
-    branches: [bench]
-    paths: ['.github/workflows/vibernt-fanout.yml']
   workflow_dispatch:
     inputs:
       runner:

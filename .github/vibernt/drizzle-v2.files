@@ -1,0 +1,17 @@
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.affected-count-d1.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.affected-count-postgres-js.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.and-or-where.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.insensitive-join.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.joins-where.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.like-escape-joins.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.like-escape.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.mysql-serial-insert-id.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.mysql.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.null-where.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.pg.increment-one-contention.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.pg.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.plural-one-to-one-join.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.plural-query-key.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.plural-suffix-trailing-s.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.schema-check.test.ts
+e2e/adapter/test/drizzle-v2-relations-adapter/adapter.drizzle.sqlite.test.ts

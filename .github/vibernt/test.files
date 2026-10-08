@@ -314,10 +314,3 @@ packages/stripe/test/stripe-organization.test.ts
 packages/stripe/test/subscription.test.ts
 packages/stripe/test/utils.test.ts
 packages/stripe/test/webhook.test.ts
-test/unit/magic-link-secondary-storage.test.ts
-test/unit/no-multi-clause-adapter-update.test.ts
-test/unit/oauth-stateless-account-data.test.ts
-test/unit/proxy-agent/index.spec.ts
-test/unit/types/db.test.ts
-test/unit/types/endpoint-method.test.ts
-test/unit/types/index.test.ts

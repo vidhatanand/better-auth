@@ -9,6 +9,8 @@
 #     that upstream's `coverage`/`e2e:integration` tasks depend on), then pulls batches of test files from the run's
 #     queue and runs them with each package's own vitest (.github/vibernt/run-vitest.sh), uploading each unit's JUnit.
 # Differences from upstream: the coverage files are not merged (nyc), node 22.x only; no secrets, no upstream changes.
+# `test` runs the packages upstream's `pnpm coverage` runs (turbo --filter=./packages/* --filter=./test/*, which does not
+# include the `test` package itself).
 # The fan-out action is a local copy of cri-ci actions/shard (.github/actions/vibernt-shard, see its header).
 name: Vibernt fan-out
 
@@ -140,6 +142,7 @@ jobs:
           job: test
           index: ${{ matrix.shard }}
           batch: 48
+          unit-timeout-floor-ms: 1500000
           run: bash .github/vibernt/run-vitest.sh {files}
           junit: .vibernt-junit/*.xml
 
@@ -219,6 +222,7 @@ jobs:
           job: drizzle-v2
           index: ${{ matrix.shard }}
           batch: 48
+          unit-timeout-floor-ms: 1500000
           run: bash .github/vibernt/run-vitest.sh {files}
           junit: .vibernt-junit/*.xml
 
@@ -298,6 +302,7 @@ jobs:
           job: prisma
           index: ${{ matrix.shard }}
           batch: 48
+          unit-timeout-floor-ms: 1500000
           run: bash .github/vibernt/run-vitest.sh {files}
           junit: .vibernt-junit/*.xml
 

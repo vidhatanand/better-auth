@@ -1,0 +1,411 @@
+# Vibernt build-once fan-out benchmark (0.4.5 lever round). Manual dispatch only.
+#
+# The jobs of vibernt-bench.yml (CI `test` 22.x, the drizzle-v2-relations and prisma adapter integration tests) as
+# fan-out with build once, through the published vibernt/ci actions (v1):
+#   - `plan` plans each job's legs (shard mode plan, files from .github/vibernt/*.files), then does the setup once:
+#     pnpm/Node, vibernt/ci deps (installed node_modules by install identity), the turbo builds the three jobs need
+#     (turbo's remote cache comes from the runner), and uploads the prepared workspace for each job (shard mode
+#     prepare). node_modules are left out of the copy (Better Auth's installed tree is about 647 MB compressed, above
+#     the 512 MiB copy limit); each leg restores them with vibernt/ci deps.
+#   - each leg checks out, restores the prepared workspace (shard mode restore), sets up pnpm/Node and node_modules
+#     (deps), runs the turbo build only when nothing was restored, starts its compose services and pulls batches of test
+#     files from the run's queue (shard mode pull, each package's own vitest via .github/vibernt/run-vitest.sh).
+# deps runs with HOME=/tmp/vibernt-deps-home (a copy of ~/.npmrc): the action's side-effect check walks HOME, which holds
+# the workspace and the runner's logs, so with the real HOME it never saves. cache=cold tags the .turbo key as in
+# vibernt-bench.yml; a cold run is dispatched on a fresh bench-* branch so the remote build cache and deps (scoped per
+# branch) are cold too. No secrets, no upstream workflow changes.
+name: Vibernt bench fan-out
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: runs-on label of the plan job and the legs
+        type: choice
+        options:
+          - vibernt-ubuntu-24.04-4cpu
+          - vibernt-ubuntu-24.04
+          - ubuntu-24.04
+        default: vibernt-ubuntu-24.04-4cpu
+      cache:
+        description: cold = .turbo cache keys that never match; warm = upstream cache keys
+        type: choice
+        options:
+          - cold
+          - warm
+        default: warm
+
+run-name: fanout build-once ${{ inputs.runner }} ${{ inputs.cache }}
+
+permissions: {}
+
+env:
+  BENCH_CACHE_TAG: ${{ inputs.cache == 'cold' && format('cold-{0}-{1}-', github.run_id, github.run_attempt) || '' }}
+  COPY_EXCLUDE: '**/node_modules'
+
+jobs:
+  plan:
+    name: Fan-out plan and prepare
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      test: ${{ steps.test.outputs.matrix }}
+      drizzle-v2: ${{ steps.drizzle.outputs.matrix }}
+      prisma: ${{ steps.prisma.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - id: test
+        name: Plan CI test
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: plan
+          job: test
+          files-from: .github/vibernt/test.files
+          max: 8
+          target: 3m
+          timeout: 30m
+          fail-on-error: true
+      - id: drizzle
+        name: Plan drizzle-v2-relations adapter tests
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: plan
+          job: drizzle-v2
+          files-from: .github/vibernt/drizzle-v2.files
+          max: 6
+          target: 3m
+          timeout: 30m
+          fail-on-error: true
+      - id: prisma
+        name: Plan prisma adapter tests
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: plan
+          job: prisma
+          files-from: .github/vibernt/prisma.files
+          max: 3
+          target: 3m
+          timeout: 30m
+          fail-on-error: true
+
+      - name: Cache turbo build setup
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
+      - name: Deps home
+        run: |
+          mkdir -p /tmp/vibernt-deps-home
+          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
+          install: false
+      - name: Install dependencies (vibernt/deps)
+        id: deps
+        uses: vibernt/ci/actions/deps@v1
+        env:
+          LEFTHOOK: '0'
+          HOME: /tmp/vibernt-deps-home
+        with:
+          outputs: |
+            docs/.source
+            e2e/adapter/test/prisma-adapter/.tmp
+      - name: Build (what the three jobs need)
+        run: |
+          pnpm build
+          pnpm exec turbo run build --filter="@better-auth-test/drizzle-v2-relations-adapter..." --filter="@better-auth-test/prisma-adapter..."
+      - name: Prepare workspace (test)
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: prepare
+          job: test
+          exclude: ${{ env.COPY_EXCLUDE }}
+      - name: Prepare workspace (drizzle-v2)
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: prepare
+          job: drizzle-v2
+          exclude: ${{ env.COPY_EXCLUDE }}
+      - name: Prepare workspace (prisma)
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: prepare
+          job: prisma
+          exclude: ${{ env.COPY_EXCLUDE }}
+
+  test:
+    name: test (22.x) fan-out (leg ${{ matrix.shard }})
+    if: github.event_name == 'workflow_dispatch'
+    needs: plan
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      id-token: write
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.test) }}
+    env:
+      COMPOSE_SERVICES: postgres postgres-kysely mongodb
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: ws
+        name: Restore prepared workspace
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: restore
+          job: test
+      - name: Cache turbo build setup
+        if: steps.ws.outputs.restored != 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
+      - name: Deps home
+        run: |
+          mkdir -p /tmp/vibernt-deps-home
+          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@22.x
+          require-lockfile: true
+          install: false
+      - name: Install dependencies (vibernt/deps)
+        id: deps
+        uses: vibernt/ci/actions/deps@v1
+        env:
+          LEFTHOOK: '0'
+          HOME: /tmp/vibernt-deps-home
+        with:
+          outputs: |
+            docs/.source
+            e2e/adapter/test/prisma-adapter/.tmp
+      - name: Rebuild native bindings for matrix node
+        run: pnpm -r rebuild better-sqlite3
+      - name: Reset Docker Containers
+        run: docker compose down --volumes --remove-orphans
+      - name: Start Docker Containers
+        run: |
+          read -r -a compose_services <<< "$COMPOSE_SERVICES"
+          docker compose up -d --wait --wait-timeout 60 "${compose_services[@]}"
+      - name: Build packages (only without a prepared workspace)
+        if: steps.ws.outputs.restored != 'true'
+        run: pnpm build
+      - name: Test (fan-out leg ${{ matrix.shard }})
+        uses: vibernt/ci/actions/shard@v1
+        env:
+          VITEST_ARGS: --coverage --coverage.provider=istanbul
+        with:
+          mode: pull
+          job: test
+          index: ${{ matrix.shard }}
+          batch: 48
+          run: bash .github/vibernt/run-vitest.sh {files}
+          junit: .vibernt-junit/*.xml
+      - name: Docker Compose Diagnostics
+        if: failure()
+        run: |
+          read -r -a compose_services <<< "$COMPOSE_SERVICES"
+          docker compose ps --all || true
+          docker compose logs --no-color "${compose_services[@]}" || true
+      - name: Stop Docker Containers
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  drizzle-v2:
+    name: "@better-auth-test/drizzle-v2-relations-adapter Integration Test fan-out (leg ${{ matrix.shard }})"
+    if: github.event_name == 'workflow_dispatch'
+    needs: plan
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.drizzle-v2) }}
+    env:
+      COMPOSE_SERVICES: postgres mysql
+      FILTER: "@better-auth-test/drizzle-v2-relations-adapter"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: ws
+        name: Restore prepared workspace
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: restore
+          job: drizzle-v2
+      - name: Cache turbo build setup
+        if: steps.ws.outputs.restored != 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
+      - name: Deps home
+        run: |
+          mkdir -p /tmp/vibernt-deps-home
+          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
+          install: false
+      - name: Install dependencies (vibernt/deps)
+        id: deps
+        uses: vibernt/ci/actions/deps@v1
+        env:
+          LEFTHOOK: '0'
+          HOME: /tmp/vibernt-deps-home
+        with:
+          outputs: |
+            docs/.source
+            e2e/adapter/test/prisma-adapter/.tmp
+      - name: Reset Docker Containers
+        run: docker compose down --volumes --remove-orphans
+      - name: Build Adapter Dependencies (only without a prepared workspace)
+        if: steps.ws.outputs.restored != 'true'
+        run: pnpm exec turbo run build --filter="$FILTER..."
+      - name: Start Docker Containers
+        run: |
+          read -r -a compose_services <<< "$COMPOSE_SERVICES"
+          for startup_attempt in 1 2; do
+            if docker compose up -d --wait --wait-timeout 60 "${compose_services[@]}"; then
+              exit 0
+            fi
+            if [[ "$startup_attempt" -eq 2 ]]; then
+              exit 1
+            fi
+            echo "Container startup failed; resetting and retrying once."
+            docker compose down --volumes --remove-orphans || true
+          done
+      - name: Adapter Integration (fan-out leg ${{ matrix.shard }})
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: pull
+          job: drizzle-v2
+          index: ${{ matrix.shard }}
+          batch: 48
+          run: bash .github/vibernt/run-vitest.sh {files}
+          junit: .vibernt-junit/*.xml
+      - name: Docker Compose Diagnostics
+        if: failure()
+        run: |
+          read -r -a compose_services <<< "$COMPOSE_SERVICES"
+          docker compose ps --all || true
+          docker compose logs --no-color "${compose_services[@]}" || true
+      - name: Stop Docker Containers
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  prisma:
+    name: "@better-auth-test/prisma-adapter Integration Test fan-out (leg ${{ matrix.shard }})"
+    if: github.event_name == 'workflow_dispatch'
+    needs: plan
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.prisma) }}
+    env:
+      COMPOSE_SERVICES: postgres-prisma mysql-prisma
+      FILTER: "@better-auth-test/prisma-adapter"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: ws
+        name: Restore prepared workspace
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: restore
+          job: prisma
+      - name: Cache turbo build setup
+        if: steps.ws.outputs.restored != 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
+      - name: Deps home
+        run: |
+          mkdir -p /tmp/vibernt-deps-home
+          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          require-lockfile: true
+          install: false
+      - name: Install dependencies (vibernt/deps)
+        id: deps
+        uses: vibernt/ci/actions/deps@v1
+        env:
+          LEFTHOOK: '0'
+          HOME: /tmp/vibernt-deps-home
+        with:
+          outputs: |
+            docs/.source
+            e2e/adapter/test/prisma-adapter/.tmp
+      - name: Reset Docker Containers
+        run: docker compose down --volumes --remove-orphans
+      - name: Build Adapter Dependencies (only without a prepared workspace)
+        if: steps.ws.outputs.restored != 'true'
+        run: pnpm exec turbo run build --filter="$FILTER..."
+      - name: Start Docker Containers
+        run: |
+          read -r -a compose_services <<< "$COMPOSE_SERVICES"
+          for startup_attempt in 1 2; do
+            if docker compose up -d --wait --wait-timeout 60 "${compose_services[@]}"; then
+              exit 0
+            fi
+            if [[ "$startup_attempt" -eq 2 ]]; then
+              exit 1
+            fi
+            echo "Container startup failed; resetting and retrying once."
+            docker compose down --volumes --remove-orphans || true
+          done
+      - name: Adapter Integration (fan-out leg ${{ matrix.shard }})
+        uses: vibernt/ci/actions/shard@v1
+        with:
+          mode: pull
+          job: prisma
+          index: ${{ matrix.shard }}
+          batch: 48
+          run: bash .github/vibernt/run-vitest.sh {files}
+          junit: .vibernt-junit/*.xml
+      - name: Docker Compose Diagnostics
+        if: failure()
+        run: |
+          read -r -a compose_services <<< "$COMPOSE_SERVICES"
+          docker compose ps --all || true
+          docker compose logs --no-color "${compose_services[@]}" || true
+      - name: Stop Docker Containers
+        if: always()
+        run: docker compose down --volumes --remove-orphans

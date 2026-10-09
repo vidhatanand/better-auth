@@ -12,6 +12,8 @@
 #     the same pnpm/setup pin with install: false. The deps step runs with HOME=/tmp/vibernt-deps-home (a copy of the
 #     runner's ~/.npmrc, so the dependency store still applies): the action's side-effect check walks HOME, and on a
 #     runner the workspace and the runner's own _diag logs live under HOME, so with the real HOME it never saves.
+#     store=off leaves ~/.npmrc out of that HOME (the install goes to the npm registry) and sets PNPM_BENCH_STORE=off,
+#     which changes the deps identity so the install runs in full: an A/B of the dependency store.
 #     LEFTHOOK=0 keeps lefthook's postinstall out of .git/hooks. Turbo's remote cache is whatever the runner sets
 #     (Vibernt drop-in: TURBO_API/TOKEN/TEAM in the runner's .env; the workflow sets none). id-token: write for the
 #     Vibernt actions.
@@ -43,8 +45,15 @@ on:
           - none
           - all
         default: none
+      store:
+        description: on = the dependency store as the runner configures it; off = the levers install fetches from the npm registry (A/B of the store)
+        type: choice
+        options:
+          - 'on'
+          - 'off'
+        default: 'on'
 
-run-name: bench ${{ inputs.runner }} ${{ inputs.cache }} levers=${{ inputs.levers || 'none' }}
+run-name: bench ${{ inputs.runner }} ${{ inputs.cache }} levers=${{ inputs.levers || 'none' }}${{ inputs.store == 'off' && ' store=off' || '' }}
 
 permissions: {}
 
@@ -89,7 +98,9 @@ jobs:
           if [[ -z "$v" ]]; then v=$(tr -d '[:space:]' < .nvmrc); fi
           echo "runtime=node@${v#v}" >> "$GITHUB_OUTPUT"
           mkdir -p /tmp/vibernt-deps-home
-          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+          if [[ "$STORE" == "off" ]]; then echo "PNPM_BENCH_STORE=off" >> "$GITHUB_ENV"; elif [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+        env:
+          STORE: ${{ inputs.store }}
 
       - name: Setup pnpm and Node.js without install (levers)
         if: inputs.levers == 'all'
@@ -187,7 +198,9 @@ jobs:
           if [[ -z "$v" ]]; then v=$(tr -d '[:space:]' < .nvmrc); fi
           echo "runtime=node@${v#v}" >> "$GITHUB_OUTPUT"
           mkdir -p /tmp/vibernt-deps-home
-          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+          if [[ "$STORE" == "off" ]]; then echo "PNPM_BENCH_STORE=off" >> "$GITHUB_ENV"; elif [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+        env:
+          STORE: ${{ inputs.store }}
 
       - name: Setup pnpm and Node.js without install (levers)
         if: inputs.levers == 'all'

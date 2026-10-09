@@ -7,6 +7,14 @@
 #   - cache=cold puts a per-run tag into the .turbo cache key and restore prefix so nothing restores;
 #     cache=warm uses upstream's exact key and restore prefix;
 #   - PR/merge-queue concurrency groups and the alls-green gate jobs are dropped.
+#   - levers=all (0.4.5 lever round): the install runs through vibernt/ci/actions/deps@v1 (installed node_modules by
+#     exact install identity, verified offline) instead of the shared setup action's install; pnpm and Node come from
+#     the same pnpm/setup pin with install: false. The deps step runs with HOME=/tmp/vibernt-deps-home (a copy of the
+#     runner's ~/.npmrc, so the dependency store still applies): the action's side-effect check walks HOME, and on a
+#     runner the workspace and the runner's own _diag logs live under HOME, so with the real HOME it never saves.
+#     LEFTHOOK=0 keeps lefthook's postinstall out of .git/hooks. Turbo's remote cache is whatever the runner sets
+#     (Vibernt drop-in: TURBO_API/TOKEN/TEAM in the runner's .env; the workflow sets none). id-token: write for the
+#     Vibernt actions.
 # Jobs: CI `test` (node 22.x) from ci.yml; E2E `adapter-integration` for drizzle-v2-relations and prisma from e2e.yml.
 name: Vibernt bench
 
@@ -28,8 +36,15 @@ on:
           - cold
           - warm
         default: warm
+      levers:
+        description: none = upstream setup; all = vibernt/ci deps around the install (remote build cache comes from the runner)
+        type: choice
+        options:
+          - none
+          - all
+        default: none
 
-run-name: bench ${{ inputs.runner }} ${{ inputs.cache }}
+run-name: bench ${{ inputs.runner }} ${{ inputs.cache }} levers=${{ inputs.levers || 'none' }}
 
 permissions: {}
 
@@ -43,6 +58,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
+      id-token: write
     timeout-minutes: 30
     env:
       COMPOSE_SERVICES: postgres postgres-kysely mongodb
@@ -60,9 +76,40 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
 
-      - uses: better-auth/shared-workflows/.github/actions/setup-pnpm@08e5520e7a829b03bee1152913682b67d2ba44b1
+      - if: inputs.levers != 'all'
+        uses: better-auth/shared-workflows/.github/actions/setup-pnpm@08e5520e7a829b03bee1152913682b67d2ba44b1
         with:
           node-version: 22.x
+
+      - name: Node version (levers)
+        id: node
+        if: inputs.levers == 'all'
+        run: |
+          v="22.x"
+          if [[ -z "$v" ]]; then v=$(tr -d '[:space:]' < .nvmrc); fi
+          echo "runtime=node@${v#v}" >> "$GITHUB_OUTPUT"
+          mkdir -p /tmp/vibernt-deps-home
+          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+
+      - name: Setup pnpm and Node.js without install (levers)
+        if: inputs.levers == 'all'
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: ${{ steps.node.outputs.runtime }}
+          require-lockfile: true
+          install: false
+
+      - name: Install dependencies (vibernt/deps, levers)
+        id: deps
+        if: inputs.levers == 'all'
+        uses: vibernt/ci/actions/deps@v1
+        env:
+          LEFTHOOK: '0'
+          HOME: /tmp/vibernt-deps-home
+        with:
+          outputs: |
+            docs/.source
+            e2e/adapter/test/prisma-adapter/.tmp
 
       - name: Rebuild native bindings for matrix node
         run: pnpm -r rebuild better-sqlite3
@@ -96,6 +143,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -121,7 +169,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
 
-      - uses: better-auth/shared-workflows/.github/actions/setup-pnpm@08e5520e7a829b03bee1152913682b67d2ba44b1
+      - if: inputs.levers != 'all'
+        uses: better-auth/shared-workflows/.github/actions/setup-pnpm@08e5520e7a829b03bee1152913682b67d2ba44b1
+
+      - name: Node version (levers)
+        id: node
+        if: inputs.levers == 'all'
+        run: |
+          v=""
+          if [[ -z "$v" ]]; then v=$(tr -d '[:space:]' < .nvmrc); fi
+          echo "runtime=node@${v#v}" >> "$GITHUB_OUTPUT"
+          mkdir -p /tmp/vibernt-deps-home
+          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+
+      - name: Setup pnpm and Node.js without install (levers)
+        if: inputs.levers == 'all'
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: ${{ steps.node.outputs.runtime }}
+          require-lockfile: true
+          install: false
+
+      - name: Install dependencies (vibernt/deps, levers)
+        id: deps
+        if: inputs.levers == 'all'
+        uses: vibernt/ci/actions/deps@v1
+        env:
+          LEFTHOOK: '0'
+          HOME: /tmp/vibernt-deps-home
+        with:
+          outputs: |
+            docs/.source
+            e2e/adapter/test/prisma-adapter/.tmp
 
       - name: Reset Docker Containers
         run: docker compose down --volumes --remove-orphans

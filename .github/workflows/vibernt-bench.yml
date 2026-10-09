@@ -108,6 +108,7 @@ jobs:
           HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
+            docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
 
@@ -199,6 +200,7 @@ jobs:
           HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
+            docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
 

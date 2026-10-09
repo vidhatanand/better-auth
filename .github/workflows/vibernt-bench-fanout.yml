@@ -118,6 +118,7 @@ jobs:
           HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
+            docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
       - name: Build (what the three jobs need)
@@ -194,6 +195,7 @@ jobs:
           HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
+            docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
       - name: Rebuild native bindings for matrix node
@@ -280,6 +282,7 @@ jobs:
           HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
+            docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
       - name: Reset Docker Containers
@@ -371,6 +374,7 @@ jobs:
           HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
+            docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
       - name: Reset Docker Containers

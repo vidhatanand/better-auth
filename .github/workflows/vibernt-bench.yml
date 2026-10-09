@@ -99,6 +99,12 @@ jobs:
           require-lockfile: true
           install: false
 
+      - name: Registry in use (levers diagnostics)
+        if: inputs.levers == 'all'
+        run: |
+          if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
+          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+
       - name: Install dependencies (vibernt/deps, levers)
         id: deps
         if: inputs.levers == 'all'
@@ -190,6 +196,12 @@ jobs:
           runtime: ${{ steps.node.outputs.runtime }}
           require-lockfile: true
           install: false
+
+      - name: Registry in use (levers diagnostics)
+        if: inputs.levers == 'all'
+        run: |
+          if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
+          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps, levers)
         id: deps

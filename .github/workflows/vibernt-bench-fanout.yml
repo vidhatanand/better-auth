@@ -110,6 +110,11 @@ jobs:
           runtime: node@24
           require-lockfile: true
           install: false
+      - name: Registry in use (levers diagnostics)
+        run: |
+          if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
+          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
@@ -187,6 +192,11 @@ jobs:
           runtime: node@22.x
           require-lockfile: true
           install: false
+      - name: Registry in use (levers diagnostics)
+        run: |
+          if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
+          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
@@ -274,6 +284,11 @@ jobs:
           runtime: node@24
           require-lockfile: true
           install: false
+      - name: Registry in use (levers diagnostics)
+        run: |
+          if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
+          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
@@ -366,6 +381,11 @@ jobs:
           runtime: node@24
           require-lockfile: true
           install: false
+      - name: Registry in use (levers diagnostics)
+        run: |
+          if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
+          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1

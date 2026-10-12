@@ -15,7 +15,9 @@
 #     forced = the store with the guard off (store-guard: false); off = NPM_CONFIG_USERCONFIG names a copy of the
 #     runner's npmrc without the store's lines (what the guard itself does when the store loses), so installs use
 #     registry.npmjs.org. install=full gives deps an identity no tree is saved under (an npm_config_ nonce per run
-#     attempt) and save: false, so every job installs in full and nothing is saved: the A/B measures installs.
+#     attempt) and save: false, so every job installs in full and nothing is saved: the A/B measures installs. With
+#     the store on, .github/vibernt/store-colo-probe.mjs fetches 40 lockfile tarballs through the store before and
+#     after the install and tallies where the store answered from (x-vibernt-store: edge = the colo's cache, r2).
 #     LEFTHOOK=0 keeps lefthook's postinstall out of .git/hooks. Turbo's remote cache is whatever the runner sets
 #     (Vibernt drop-in: TURBO_API/TOKEN/TEAM in the runner's .env; the workflow sets none). id-token: write for the
 #     Vibernt actions.
@@ -131,6 +133,10 @@ jobs:
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
           echo "registry: $(pnpm config get registry)"
 
+      - name: Dependency store colo probe before the install (A/B diagnostics)
+        if: inputs.levers == 'all' && inputs.install == 'full' && inputs.store != 'off'
+        run: node .github/vibernt/store-colo-probe.mjs before-install
+
       - name: Install dependencies (vibernt/deps, levers)
         id: deps
         if: inputs.levers == 'all'
@@ -151,6 +157,10 @@ jobs:
           echo "deps: mode=${{ steps.deps.outputs.mode }} cache-hit=${{ steps.deps.outputs.cache-hit }} registry=${{ steps.deps.outputs.registry }}"
           echo "deps key: ${{ steps.deps.outputs.key }}"
           echo "deps store-guard: ${{ steps.deps.outputs.store-guard }}"
+
+      - name: Dependency store colo probe after the install (A/B diagnostics)
+        if: inputs.levers == 'all' && inputs.install == 'full' && inputs.store != 'off'
+        run: node .github/vibernt/store-colo-probe.mjs after-install
 
       - name: Rebuild native bindings for matrix node
         run: pnpm -r rebuild better-sqlite3
@@ -244,6 +254,10 @@ jobs:
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
           echo "registry: $(pnpm config get registry)"
 
+      - name: Dependency store colo probe before the install (A/B diagnostics)
+        if: inputs.levers == 'all' && inputs.install == 'full' && inputs.store != 'off'
+        run: node .github/vibernt/store-colo-probe.mjs before-install
+
       - name: Install dependencies (vibernt/deps, levers)
         id: deps
         if: inputs.levers == 'all'
@@ -264,6 +278,10 @@ jobs:
           echo "deps: mode=${{ steps.deps.outputs.mode }} cache-hit=${{ steps.deps.outputs.cache-hit }} registry=${{ steps.deps.outputs.registry }}"
           echo "deps key: ${{ steps.deps.outputs.key }}"
           echo "deps store-guard: ${{ steps.deps.outputs.store-guard }}"
+
+      - name: Dependency store colo probe after the install (A/B diagnostics)
+        if: inputs.levers == 'all' && inputs.install == 'full' && inputs.store != 'off'
+        run: node .github/vibernt/store-colo-probe.mjs after-install
 
       - name: Reset Docker Containers
         run: docker compose down --volumes --remove-orphans

@@ -9,11 +9,13 @@
 #   - PR/merge-queue concurrency groups and the alls-green gate jobs are dropped.
 #   - levers=all (0.4.5 lever round): the install runs through vibernt/ci/actions/deps@v1 (installed node_modules by
 #     exact install identity, verified offline) instead of the shared setup action's install; pnpm and Node come from
-#     the same pnpm/setup pin with install: false. The deps step runs with HOME=/tmp/vibernt-deps-home (a copy of the
-#     runner's ~/.npmrc, so the dependency store still applies): the action's side-effect check walks HOME, and on a
-#     runner the workspace and the runner's own _diag logs live under HOME, so with the real HOME it never saves.
-#     store=off leaves ~/.npmrc out of that HOME (the install goes to the npm registry) and sets PNPM_BENCH_STORE=off,
-#     which changes the deps identity so the install runs in full: an A/B of the dependency store.
+#     the same pnpm/setup pin with install: false. deps runs as documented (0.4.7, Vibernt/ci v1 874cb23: the real
+#     HOME; the 2026-10-09 HOME=/tmp/vibernt-deps-home workaround is gone).
+#   - store (0.4.7 A/B of the dependency store, v045-b11): on = the runner's ~/.npmrc (the store) with deps' guard;
+#     forced = the store with the guard off (store-guard: false); off = NPM_CONFIG_USERCONFIG names a copy of the
+#     runner's npmrc without the store's lines (what the guard itself does when the store loses), so installs use
+#     registry.npmjs.org. install=full gives deps an identity no tree is saved under (an npm_config_ nonce per run
+#     attempt) and save: false, so every job installs in full and nothing is saved: the A/B measures installs.
 #     LEFTHOOK=0 keeps lefthook's postinstall out of .git/hooks. Turbo's remote cache is whatever the runner sets
 #     (Vibernt drop-in: TURBO_API/TOKEN/TEAM in the runner's .env; the workflow sets none). id-token: write for the
 #     Vibernt actions.
@@ -46,14 +48,22 @@ on:
           - all
         default: none
       store:
-        description: on = the dependency store as the runner configures it; off = the levers install fetches from the npm registry (A/B of the store)
+        description: on = the dependency store with deps' guard; forced = the store without the guard; off = registry.npmjs.org (A/B of the store)
         type: choice
         options:
           - 'on'
           - 'off'
+          - forced
         default: 'on'
+      install:
+        description: restore = deps as usual (restore or install and save); full = always a full install, nothing saved (store A/B)
+        type: choice
+        options:
+          - restore
+          - full
+        default: restore
 
-run-name: bench ${{ inputs.runner }} ${{ inputs.cache }} levers=${{ inputs.levers || 'none' }}${{ inputs.store == 'off' && ' store=off' || '' }}
+run-name: bench ${{ inputs.runner }} ${{ inputs.cache }} levers=${{ inputs.levers || 'none' }}${{ inputs.store != 'on' && format(' store={0}', inputs.store) || '' }}${{ inputs.install == 'full' && ' install=full' || '' }}
 
 permissions: {}
 
@@ -97,10 +107,15 @@ jobs:
           v="22.x"
           if [[ -z "$v" ]]; then v=$(tr -d '[:space:]' < .nvmrc); fi
           echo "runtime=node@${v#v}" >> "$GITHUB_OUTPUT"
-          mkdir -p /tmp/vibernt-deps-home
-          if [[ "$STORE" == "off" ]]; then echo "PNPM_BENCH_STORE=off" >> "$GITHUB_ENV"; elif [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+          if [[ "$STORE" == "off" && -f "$HOME/.npmrc" ]]; then
+            f="$RUNNER_TEMP/bench-public-npmrc"
+            grep -v -e '^registry=' -e '/npm/:_authToken=' -e '^# Vibernt dependency store' "$HOME/.npmrc" > "$f" || true
+            echo "NPM_CONFIG_USERCONFIG=$f" >> "$GITHUB_ENV"
+          fi
+          if [[ "$INSTALL" == "full" ]]; then echo "npm_config_vibernt_bench_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"; fi
         env:
           STORE: ${{ inputs.store }}
+          INSTALL: ${{ inputs.install }}
 
       - name: Setup pnpm and Node.js without install (levers)
         if: inputs.levers == 'all'
@@ -114,7 +129,7 @@ jobs:
         if: inputs.levers == 'all'
         run: |
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
-          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+          echo "registry: $(pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps, levers)
         id: deps
@@ -122,12 +137,20 @@ jobs:
         uses: vibernt/ci/actions/deps@v1
         env:
           LEFTHOOK: '0'
-          HOME: /tmp/vibernt-deps-home
         with:
+          save: ${{ inputs.install != 'full' }}
+          store-guard: ${{ inputs.store != 'forced' }}
           outputs: |
             docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
+
+      - name: deps outputs (levers diagnostics)
+        if: inputs.levers == 'all'
+        run: |
+          echo "deps: mode=${{ steps.deps.outputs.mode }} cache-hit=${{ steps.deps.outputs.cache-hit }} registry=${{ steps.deps.outputs.registry }}"
+          echo "deps key: ${{ steps.deps.outputs.key }}"
+          echo "deps store-guard: ${{ steps.deps.outputs.store-guard }}"
 
       - name: Rebuild native bindings for matrix node
         run: pnpm -r rebuild better-sqlite3
@@ -197,10 +220,15 @@ jobs:
           v=""
           if [[ -z "$v" ]]; then v=$(tr -d '[:space:]' < .nvmrc); fi
           echo "runtime=node@${v#v}" >> "$GITHUB_OUTPUT"
-          mkdir -p /tmp/vibernt-deps-home
-          if [[ "$STORE" == "off" ]]; then echo "PNPM_BENCH_STORE=off" >> "$GITHUB_ENV"; elif [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
+          if [[ "$STORE" == "off" && -f "$HOME/.npmrc" ]]; then
+            f="$RUNNER_TEMP/bench-public-npmrc"
+            grep -v -e '^registry=' -e '/npm/:_authToken=' -e '^# Vibernt dependency store' "$HOME/.npmrc" > "$f" || true
+            echo "NPM_CONFIG_USERCONFIG=$f" >> "$GITHUB_ENV"
+          fi
+          if [[ "$INSTALL" == "full" ]]; then echo "npm_config_vibernt_bench_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"; fi
         env:
           STORE: ${{ inputs.store }}
+          INSTALL: ${{ inputs.install }}
 
       - name: Setup pnpm and Node.js without install (levers)
         if: inputs.levers == 'all'
@@ -214,7 +242,7 @@ jobs:
         if: inputs.levers == 'all'
         run: |
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
-          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+          echo "registry: $(pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps, levers)
         id: deps
@@ -222,12 +250,20 @@ jobs:
         uses: vibernt/ci/actions/deps@v1
         env:
           LEFTHOOK: '0'
-          HOME: /tmp/vibernt-deps-home
         with:
+          save: ${{ inputs.install != 'full' }}
+          store-guard: ${{ inputs.store != 'forced' }}
           outputs: |
             docs/.next
             docs/.source
             e2e/adapter/test/prisma-adapter/.tmp
+
+      - name: deps outputs (levers diagnostics)
+        if: inputs.levers == 'all'
+        run: |
+          echo "deps: mode=${{ steps.deps.outputs.mode }} cache-hit=${{ steps.deps.outputs.cache-hit }} registry=${{ steps.deps.outputs.registry }}"
+          echo "deps key: ${{ steps.deps.outputs.key }}"
+          echo "deps store-guard: ${{ steps.deps.outputs.store-guard }}"
 
       - name: Reset Docker Containers
         run: docker compose down --volumes --remove-orphans

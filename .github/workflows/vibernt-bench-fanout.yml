@@ -10,8 +10,7 @@
 #   - each leg checks out, restores the prepared workspace (shard mode restore), sets up pnpm/Node and node_modules
 #     (deps), runs the turbo build only when nothing was restored, starts its compose services and pulls batches of test
 #     files from the run's queue (shard mode pull, each package's own vitest via .github/vibernt/run-vitest.sh).
-# deps runs with HOME=/tmp/vibernt-deps-home (a copy of ~/.npmrc): the action's side-effect check walks HOME, which holds
-# the workspace and the runner's logs, so with the real HOME it never saves. cache=cold tags the .turbo key as in
+# deps runs as documented (0.4.7, Vibernt/ci v1 874cb23: the real HOME); the 2026-10-09 HOME workaround is gone. cache=cold tags the .turbo key as in
 # vibernt-bench.yml; a cold run is dispatched on a fresh bench-* branch so the remote build cache and deps (scoped per
 # branch) are cold too. No secrets, no upstream workflow changes.
 name: Vibernt bench fan-out
@@ -106,10 +105,6 @@ jobs:
           key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
-      - name: Deps home
-        run: |
-          mkdir -p /tmp/vibernt-deps-home
-          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
       - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
           runtime: node@24
@@ -118,14 +113,13 @@ jobs:
       - name: Registry in use (levers diagnostics)
         run: |
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
-          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+          echo "registry: $(pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
         env:
           LEFTHOOK: '0'
-          HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
             docs/.next
@@ -188,10 +182,6 @@ jobs:
           key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
-      - name: Deps home
-        run: |
-          mkdir -p /tmp/vibernt-deps-home
-          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
       - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
           runtime: node@22.x
@@ -200,14 +190,13 @@ jobs:
       - name: Registry in use (levers diagnostics)
         run: |
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
-          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+          echo "registry: $(pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
         env:
           LEFTHOOK: '0'
-          HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
             docs/.next
@@ -280,10 +269,6 @@ jobs:
           key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
-      - name: Deps home
-        run: |
-          mkdir -p /tmp/vibernt-deps-home
-          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
       - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
           runtime: node@24
@@ -292,14 +277,13 @@ jobs:
       - name: Registry in use (levers diagnostics)
         run: |
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
-          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+          echo "registry: $(pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
         env:
           LEFTHOOK: '0'
-          HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
             docs/.next
@@ -377,10 +361,6 @@ jobs:
           key: ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-${{ env.BENCH_CACHE_TAG }}
-      - name: Deps home
-        run: |
-          mkdir -p /tmp/vibernt-deps-home
-          if [[ -f "$HOME/.npmrc" ]]; then cp "$HOME/.npmrc" /tmp/vibernt-deps-home/.npmrc; fi
       - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
           runtime: node@24
@@ -389,14 +369,13 @@ jobs:
       - name: Registry in use (levers diagnostics)
         run: |
           if [[ -f "$HOME/.npmrc" ]]; then echo "runner ~/.npmrc present (dependency store configured)"; else echo "no runner ~/.npmrc (no dependency store)"; fi
-          echo "registry: $(HOME=/tmp/vibernt-deps-home pnpm config get registry)"
+          echo "registry: $(pnpm config get registry)"
 
       - name: Install dependencies (vibernt/deps)
         id: deps
         uses: vibernt/ci/actions/deps@v1
         env:
           LEFTHOOK: '0'
-          HOME: /tmp/vibernt-deps-home
         with:
           outputs: |
             docs/.next

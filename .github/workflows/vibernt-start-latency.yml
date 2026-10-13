@@ -1,0 +1,29 @@
+# Vibernt warm-runner start latency (v045-b2). Manual dispatch only.
+# Five jobs that do nothing but echo, so a run measures queue -> job start and nothing else.
+# runner: a Vibernt drop-in label or a GitHub-hosted label (baseline). tag: free text kept in the run name.
+name: Vibernt start latency
+run-name: "start-latency ${{ inputs.runner }} ${{ inputs.tag }}"
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: runs-on label
+        required: true
+        default: vibernt-ubuntu-24.04-4cpu
+      tag:
+        description: round tag
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  start:
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4, 5]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 10
+    steps:
+      - name: started
+        run: echo "job ${{ matrix.n }} started on $RUNNER_NAME at $(date -u +%FT%T.%3NZ)"

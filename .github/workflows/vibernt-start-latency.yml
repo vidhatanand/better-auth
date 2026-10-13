@@ -2,8 +2,13 @@
 # Five jobs that do nothing but echo, so a run measures queue -> job start and nothing else.
 # runner: a Vibernt drop-in label or a GitHub-hosted label (baseline). tag: free text kept in the run name.
 name: Vibernt start latency
-run-name: "start-latency ${{ inputs.runner }} ${{ inputs.tag }}"
+run-name: "start-latency ${{ inputs.runner || 'ubuntu-latest' }} ${{ inputs.tag || 'push' }}"
 on:
+  # A push of this file to bench registers the workflow with GitHub (a branch other than the default is only
+  # registered once it has run) and runs one GitHub-hosted baseline round.
+  push:
+    branches: [bench]
+    paths: [.github/workflows/vibernt-start-latency.yml]
   workflow_dispatch:
     inputs:
       runner:
@@ -22,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         n: [1, 2, 3, 4, 5]
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: started
